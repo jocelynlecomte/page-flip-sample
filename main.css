@@ -32,6 +32,13 @@ section {
 	font-size: 12px;
 }
 
+section>div {
+	display: block;
+	width: 400px;
+	height: 250px;
+	font-size: 12px;
+}
+
 section p,
 section h2 {
 	padding: 3px 35px;
@@ -40,4 +47,9 @@ section h2 {
 }
 section h2{
 	margin: 15px 0 10px;
+}
+
+#pageflip-canvas {
+	position: absolute;
+	z-index: 100;
 }
