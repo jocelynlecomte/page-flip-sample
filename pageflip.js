@@ -28,8 +28,6 @@
 	var canvas = document.getElementById( "pageflip-canvas" );
 	var context = canvas.getContext( "2d" );
 
-	console.log("tot");
-
 	// Organisation de la profondeur des pages et création du tableau de gestion des effets
 	for ( var i = 0, len = pages.length; i < len; i++ ) {
 		pages[i].style.zIndex = len - i;
@@ -41,8 +39,8 @@
 			progress: 1,
 			// Cible que progress devra atteindre
 			target: 1,
-			// La page est-elle en train de tourner ?
-			flipping: false
+			// La page est-elle en train d'être manipulée par l'utilisateur ?
+			dragging: false
 		} );
 	}
 	
@@ -56,29 +54,54 @@
 	// Afficher l'effet FPS fois par seconde
 	setInterval( render, 1000 / FPS );
 
-	document.addEventListener( "click", mouseClickHandler, false );
+	document.addEventListener( "mousemove", mouseMoveHandler, false );
+	document.addEventListener( "mousedown", mouseDownHandler, false );
+	document.addEventListener( "mouseup", mouseUpHandler, false );
 	
-	function mouseClickHandler( event ) {
-		mouse.x = event.clientX - book.offsetLeft;
+	function mouseMoveHandler( event ) {
+		// Recalcul des coordonnées de la souris par rapport au bord supérieur de la reliure du livre
+		mouse.x = event.clientX - book.offsetLeft - ( BOOK_WIDTH / 2 );
 		mouse.y = event.clientY - book.offsetTop;
+	}
 
-		console.log(currentPage);
+	function mouseDownHandler( event ) {
 		// On s'assure que le pointeur de la souris est à l'intérieur du livre
-		if (0 < mouse.x && mouse.x < BOOK_WIDTH && 0 < mouse.y && mouse.y < BOOK_HEIGHT) {
-			if (mouse.x < PAGE_WIDTH && currentPage > 0) {
-				// Page précédente
-				//flips[currentPage].page.style.width = PAGE_WIDTH + "px";
-				flips[currentPage - 1].target = 1;
-				flips[currentPage - 1].flipping = true;
-				currentPage--;
+		if (Math.abs(mouse.x) < PAGE_WIDTH && 0 < mouse.y && mouse.y < BOOK_HEIGHT) {
+			if (mouse.x < 0 && currentPage > 0) {
+				// L'utilisateur commence à manipuler la page précédente
+				flips[currentPage - 1].dragging = true;
 			}
-			else if (mouse.x >= PAGE_WIDTH && currentPage < flips.length - 1) {
-				// Page suivante
-				flips[currentPage].target = -1;
-				flips[currentPage].flipping = true;
-				//flips[currentPage].page.style.width = "0";
-				currentPage++;
+			else if (mouse.x > 0 && currentPage < flips.length - 1) {
+				// L'utilisateur commence à manipuler la page courante
+				flips[currentPage].dragging = true;
 			}
+		}
+		
+		// Empêcher la sélection du texte
+		event.preventDefault();
+	}
+	
+	function mouseUpHandler( event ) {
+		for( var i = 0; i < flips.length; i++ ) {
+			// Si cette page était manipulée, l'animer jusqu'à sa destination
+			if( flips[i].dragging ) {
+				if( mouse.x < 0 ) {
+					// On a relâché à gauche et la page manipulée est la page courante
+					if (i === currentPage) {
+						currentPage = Math.min( currentPage + 1, flips.length );
+					}
+					flips[i].target = -1;
+				}
+				else {
+					// On a relâché à droite et la page manipulée n'était pas la page courante
+					if (i !== currentPage) {
+						currentPage = Math.max( currentPage - 1, 0 );
+					}
+					flips[i].target = 1;
+				}
+			}
+			// On a relaché le bouton: l'utilisateur ne manipule plus rien
+			flips[i].dragging = false;
 		}
 	}
 
@@ -89,17 +112,17 @@
 		// Parcours du tableau de gestion des effets
 		for( var i = 0, len = flips.length; i < len; i++ ) {
 			var flip = flips[i];
-			if (flip.flipping) {
-				// On progresse vers la cible 
-				flip.progress += ( flip.target - flip.progress ) * 0.1;
-				// On dessine la page
+			if (flip.dragging) {
+				// On détermine la cible de l'animation par rapport à la position de la souris
+				// tout en s'assurant que l'on reste entre -1 et 1
+				var ratio = mouse.x / PAGE_WIDTH;
+				flip.target = Math.max( Math.min( ratio, 1 ), -1 );
+			}
+			// On progresse vers la cible 
+			flip.progress += ( flip.target - flip.progress ) * 0.2;
+			if (flip.dragging || Math.abs( flip.progress ) < 0.997) {
 				drawFlip( flip );
-				// On vérifie si la cible est atteinte
-				if (Math.abs(flip.target - flip.progress) < 0.003) {
-					flip.flipping = false;
-					flip.progress = flip.target;
-				}
-			}			
+			}
 		}
 	}
 
@@ -157,10 +180,11 @@
 	}
 
 	function drawDroppedShadow(foldX, foldWidth, strength) {
-		// Right side drop shadow
+		// Ombre portée sur le côté droit
 	    var rightShadowWidth = (PAGE_WIDTH * 0.5) * Math.max(Math.min(strength, 0.5), 0);
 	    var rightShadowGradient = context.createLinearGradient(foldX, 0, foldX + rightShadowWidth, 0);
-	    rightShadowGradient.addColorStop(0, 'rgba(0,0,0,'+(strength*0.2)+')');
+	    var rightOpacity = (strength * 0.2 < 0.01)? 0 : strength * 0.2;
+	    rightShadowGradient.addColorStop(0, 'rgba(0,0,0,'+ rightOpacity +')');
 	    rightShadowGradient.addColorStop(0.8, 'rgba(0,0,0,0.0)');
 	      
 	    context.fillStyle = rightShadowGradient;
@@ -171,13 +195,13 @@
 	    context.lineTo(foldX, PAGE_HEIGHT);
 	    context.fill();
 
-
-	    // Left side drop shadow
+	    // Ombre portée sur le côté gauche
 	    var leftShadowWidth = (PAGE_WIDTH * 0.5) * Math.max(Math.min(strength, 0.5), 0);
 	    var leftShadowGradient = context.createLinearGradient(foldX - foldWidth - leftShadowWidth, 0, foldX - foldWidth, 0);
 	    leftShadowGradient.addColorStop(0, 'rgba(0,0,0,0.0)');
-	    leftShadowGradient.addColorStop(1, 'rgba(0,0,0,'+(strength*0.15)+')');
-	        
+	    var leftOpacity = (strength * 0.15 < 0.01)? 0 : strength * 0.15;
+	    leftShadowGradient.addColorStop(1, 'rgba(0,0,0,'+ leftOpacity +')');
+
 	    context.fillStyle = leftShadowGradient;
 	    context.beginPath();
 	    context.moveTo(foldX - foldWidth - leftShadowWidth, 0);
